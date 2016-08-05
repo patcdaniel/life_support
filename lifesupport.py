@@ -11,10 +11,13 @@ Classes:
 
 '''
 import serial,sys,time,numpy,os
-import plotly.plotly as py
 import json  # used to parse config.json
 import datetime  # log and plot current time
 import random
+import plotly.plotly as py
+import plotly.tools as tls
+import plotly.graph_objs as go
+import numpy as np
 
 class LifeSupport(object):
 
@@ -223,20 +226,19 @@ class LifeSupport(object):
             print('Turning recirc valve Off')
             self.ser.write('#021600\r\n')
             #self.circulation_timer.set_timer(10)
+
     def start(self):
         self.open_com()
-        #wr = WebReport()
-        #wr.start_py()
-        #wr.plot_data()
-        time.sleep(4)
-##        self.toggle_pump(False)
-##        self.toggle_circ_valve(False)
+        tmp = Tmp_Probe()
+        wr = WebReport()
+        self.toggle_pump(False)
+        time.sleep(1)
+        self.toggle_circ_valve(False)
         while True:
+            out_temp = tmp.get_temp()
             out_state = self.get_case()
-          #  wr.update_plot(out_state)
+            wr.stream(state=out_state,temp=out_temp)
             time.sleep(2)
-            
-
         
 class Timer(object):
 
@@ -279,49 +281,99 @@ class WebReport(object):
     An alternative method would be to update a static page with using the highcharts JS library or even better, updating
     a file and using AJAX read it into the highcharts library.
     '''
-    def __init__(self):
-        self.eth0_ip = self.print_ip()
+    def __init__(self,token=1):
+        self.stream_tokens = ["7c0ig164ac","64299hxjgr"]
+        self.stream_id1 = dict(token=self.stream_tokens[0])
+        self.stream_id2 = dict(token=self.stream_tokens[1])
+        self.plot_url = py.plot(self.make_plots(),filename='Aq_Tank1')
 
-    def start_py(self):
-        with open('/home/pi/Documents/reef_lifesupport/config.json') as config_file:
-            self.plotly_user_config = json.load(config_file)
-            py.sign_in(self.plotly_user_config["plotly_username"], self.plotly_user_config["plotly_api_key"])
-        self.stream = py.Stream(self.plotly_user_config['plotly_streaming_tokens'][0])
+        self.s1 = py.Stream(stream_id=self.stream_tokens[0])
+        self.s2 = py.Stream(stream_id=self.stream_tokens[1])
+        self.s1.open()
+        self.s2.open()
 
-    def plot_data(self):
-        url = py.plot([
-            {
-                'x': [], 'y': [], 'type': 'scatter',
-                'stream': {
-                    'token': self.plotly_user_config['plotly_streaming_tokens'][0],
-                    'maxpoints': 2880 # This is one day of points at .5 Hz
-                }
-            }], filename='Raspberry Pi Streaming Example Values')
-        self.plot = url
-        self.url= url
-        self.stream.open()
 
-    def update_plot(self,y):
-        self.stream.write({'x': datetime.datetime.now(), 'y': y})
 
-    def gen_test_data(self):
-        return random.randint(0,3)
+    def make_plots(self):
+        trace1 = go.Scatter(x=[], y=[], stream=self.stream_id1, name='trace1')
+        trace2 = go.Scatter(x=[], y=[], stream=self.stream_id2, yaxis='y2', name='trace2',
+                            marker=dict(color='rgb(148, 103, 189)'))
 
-    def start_web_report(self):
-        self.start_py()
-        self.plot_data()
+        data = [trace1, trace2]
+        layout = go.Layout(
+            title='Squid Lifesupport',
+            yaxis=dict(
+                title='Water Treatment state',
+                range=[0,7]
+            ),
 
-    def print_ip(self):
-        f = os.popen('ifconfig eth0 | grep "inet\ addr" | cut -d: f2 | cut -d" " -f1')
-        return f.read()
-    
-    def run_test(self):
-        self.start_py()
-        self.plot_data()
+            yaxis2=dict(
+                title='Temperature [C]',
+                range=[10,30],
+                titlefont=dict(
+                    color='rgb(148, 103, 189)'
+                ),
+                tickfont=dict(
+                    color='rgb(148, 103, 189)'
+                ),
+                overlaying='y',
+                side='right'
+            )
+        )
+
+        fig = go.Figure(data=data, layout=layout)
+        return fig
+
+    def stream(self,temp,state):
+        x = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+
+        self.s1.write(dict(x=x, y=state))
+        self.s2.write(dict(x=x, y=temp))
+
+    def test_stream(self):
+        k = 10
+        i = 1
+
         while True:
-            self.update_plot(self.gen_test_data())
-            time.sleep(10)
+            x = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+            delta = np.random.randint(4, 10)
+            y = (np.cos(k * i / 50.) * np.cos(i / 50.) + np.random.randn(1))[0]
+            self.s1.write(dict(x=x, y=y))
+            self.s2.write(dict(x=x, y=(-delta * y)))
+            time.sleep(0.8)
+            i += 1
 
+class Tmp_Probe(object):
+    '''
+    Return the temperature reading from a one-wire probe. Currently using the Pin 4
+    '''
+    def __init__(self):
+        self.temp_sensor = '/sys/bus/w1/devices/28-000006061eb7/w1_slave'
+        self.__os_prep()
+
+    def __os_prep(self):
+        os.system('modprobe w1-gpio')
+        os.system('modprobe w1-therm')
+
+    def __temp_raw(self):
+        f = open(self.temp_sensor, 'r')
+        lines = f.readlines()
+        f.close()
+        return lines
+
+    def __read_temp(self):
+        lines = self.__temp_raw()
+        while lines[0].strip()[-3:] != 'YES':
+            time.sleep(0.2)
+            lines = self.__temp_raw()
+        temp_output = lines[1].find('t=')
+        if temp_output != -1:
+            temp_string = lines[1].strip()[temp_output + 2:]
+            temp_c = float(temp_string) / 1000.0
+            return temp_c
+
+    def get_temp(self):
+        return self.__read_temp()
 
 if __name__ == '__main__':
     life = LifeSupport()
