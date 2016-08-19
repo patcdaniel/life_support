@@ -33,11 +33,18 @@ class LifeSupport(object):
         self.circulation_timer = Timer()
         self.last_state = 0
         self.state = 0
+        self.__filename =  str(datetime.datetime.now().month) + "_" + str(datetime.datetime.now().year) + "_tank.txt"
         self.start()
+        
+    def __write_out(self,temp,state):
+		x = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+		outString = x + "," + str(temp) + "," + str(state) + "\n"
+		with open(self.__filename,'a') as f:
+			f.write(outString)
         
     def get_comm_port(self):
         return self.__commPort
-
+	
     def get_status(self):
         return self.__status
 
@@ -146,17 +153,17 @@ class LifeSupport(object):
             # Case 0: Empty 
             print "Empty"
             self.toggle_pump(False)
-            self.toggle_circ_valve(False)   
+            self.toggle_circ_valve(True)   
         elif (state == 4) and (state != self.last_state):
             # Case 1 : bottom switch only
             print "Bottom float on"
             self.toggle_pump(True)
-            self.toggle_circ_valve(False)
+            self.toggle_circ_valve(True)
         elif (state == 6) and (state != self.last_state):
             #Case 2: Middle switch
             print "Middle float on"
             self.toggle_pump(True)
-            self.toggle_circ_valve(True)
+            self.toggle_circ_valve(False)
         elif (state == 7) and (state != self.last_state):
             #Case 3: Top Switch
             print "Top Float on"
@@ -237,8 +244,19 @@ class LifeSupport(object):
         while True:
             out_temp = tmp.get_temp()
             out_state = self.get_case()
-            wr.stream(state=out_state,temp=out_temp)
-            time.sleep(2)
+            try:
+				self.__write_out(out_temp,out_state)
+            except Exception, e:
+                print e
+                print "Trouble writing to ", self.__filename()
+                pass
+            try:
+                wr.stream(state=out_state,temp=out_temp)
+            except Exception, e:
+                print e
+                print "Error reporting Status"
+                pass
+            time.sleep(15)
         
 class Timer(object):
 
