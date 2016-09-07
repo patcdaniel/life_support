@@ -236,16 +236,22 @@ class LifeSupport(object):
 
     def start(self):
         self.open_com()
+
         tmp = Tmp_Probe()
         wr = WebReport()
         self.toggle_pump(False)
         time.sleep(1)
         self.toggle_circ_valve(False)
         while True:
-            out_temp = tmp.get_temp()
+            try:
+                out_temp = tmp.get_temp()
+            except Exception, e:
+                print "Trouble getting temp to "
+                out_temp = 666 # This should signify that something is wrong
+                pass
             out_state = self.get_case()
             try:
-				self.__write_out(out_temp,out_state)
+                self.__write_out(out_temp,out_state)
             except Exception, e:
                 print e
                 print "Trouble writing to ", self.__filename()
