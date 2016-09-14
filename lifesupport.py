@@ -37,14 +37,14 @@ class LifeSupport(object):
         self.start()
         
     def __write_out(self,temp,state):
-		x = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-		outString = x + "," + str(temp) + "," + str(state) + "\n"
-		with open(self.__filename,'a') as f:
-			f.write(outString)
+        x = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+        outString = x + "," + str(temp) + "," + str(state) + "\n"
+        with open(self.__filename,'a') as f:
+            f.write(outString)
         
     def get_comm_port(self):
         return self.__commPort
-	
+    
     def get_status(self):
         return self.__status
 
@@ -139,9 +139,11 @@ class LifeSupport(object):
     
         # This is the main logic
         # When the pump is on, a second digital out
-        state = int(self.__status[4])  # Float state
-        print "DEBUG State:", state
-        print "Last State:", self.last_state
+        try:
+            state = int(self.__status[4])  # Float state
+        except Exception, e:
+            time.sleep(1)
+            return 0
         self.update_relays()
         
         # Cases:
