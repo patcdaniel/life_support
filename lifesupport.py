@@ -35,16 +35,16 @@ class LifeSupport(object):
         self.state = 0
         self.__filename =  str(datetime.datetime.now().month) + "_" + str(datetime.datetime.now().year) + "_tank.txt"
         self.start()
-        
+
     def __write_out(self,temp,state):
-		x = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-		outString = x + "," + str(temp) + "," + str(state) + "\n"
-		with open(self.__filename,'a') as f:
-			f.write(outString)
-        
+        x = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+        outString = x + "," + str(temp) + "," + str(state) + "\n"
+        with open(self.__filename,'a') as f:
+            f.write(outString)
+
     def get_comm_port(self):
         return self.__commPort
-	
+
     def get_status(self):
         return self.__status
 
@@ -85,7 +85,7 @@ class LifeSupport(object):
             print "Erorr: {0}".format(strerror)
             print "Can't open serial port. Shutting down"
             sys.exit() # Quit the program
-        except SerialException as (errno, strerror):
+        except Exception as (errno, strerror):
             print "Erorr: {0}".format(strerror)
 
     def is_open(self):
@@ -136,14 +136,14 @@ class LifeSupport(object):
                     time.sleep(2)
             print "Fatal Error, can't read switches"
             sys.exit()  # Quit the program
-    
+
         # This is the main logic
         # When the pump is on, a second digital out
         state = int(self.__status[4])  # Float state
         print "DEBUG State:", state
         print "Last State:", self.last_state
         self.update_relays()
-        
+
         # Cases:
         # !000000 - No floats on
         # !000400 - Bottom float on
@@ -153,7 +153,7 @@ class LifeSupport(object):
             # Case 0: Empty 
             print "Empty"
             self.toggle_pump(False)
-            self.toggle_circ_valve(True)   
+            self.toggle_circ_valve(True)
         elif (state == 4) and (state != self.last_state):
             # Case 1 : bottom switch only
             print "Bottom float on"
@@ -191,16 +191,16 @@ class LifeSupport(object):
             self.__pump_on = True
             time.sleep(1)
             self.__recirc_on = True
-        
 
-            
+
+
     def toggle_pump(self,on=True):
         '''
         Check if pump is on or off, also check if pump timer is running, if so don't turn on
         :param on: Turn the pump on (True) or off (False)
         :return: NONE
         '''
-        
+
         ##if self.pump_timer.is_running():
         if False:
             # To prevent cycling the pump on and off, set a tolerance
@@ -224,7 +224,7 @@ class LifeSupport(object):
         :param on: Turn the pump on (True) or off (False)
         :return: NONE
         '''
-            # Figure out how to check if the pump relay is open or not. This should be a read from the DO
+        # Figure out how to check if the pump relay is open or not. This should be a read from the DO
         if on:
             print('Turning recirc Valve On')
             self.ser.write('#021601\r\n')
@@ -252,20 +252,23 @@ class LifeSupport(object):
             out_state = self.get_case()
             try:
                 self.__write_out(out_temp,out_state)
-            except Exception, e:
-                print e
-                print "Trouble writing to ", self.__filename()
-                pass
-            try:
-                wr.stream(state=out_state,temp=out_temp)
-            except Exception, e:
-                print e
-                print "Error reporting Status"
-                pass
-            time.sleep(15)
-        
-class Timer(object):
+            except Exception, e:s
+            print e
+            print "Trouble writing to ", self.__filename()
+            pass
+        try:
+            wr.stream(state=out_state,temp=out_temp)
+        except Exception, e:
+            print e
+            print "Error reporting Status"
+            pass
+        time.sleep(15)
 
+class Timer(object):
+    '''
+    Timer objects keep track of ellapsed time.
+
+    '''
     def __init__(self):
         self.__running = False
         self.end_time = numpy.nan
