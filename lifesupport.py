@@ -199,8 +199,6 @@ class LifeSupport(object):
             time.sleep(1)
             self.__recirc_on = True
 
-
-
     def toggle_pump(self,on=True):
         '''
         Check if pump is on or off, also check if pump timer is running, if so don't turn on
