@@ -29,12 +29,11 @@ class LifeSupport(object):
         self.__do_status = ''
         self.__pump_on = False
         self.__recirc_on = False
-        self.pump_timer = Timer()
-        self.circulation_timer = Timer()
         self.last_state = 0
         self.state = 0
         self.__filename =  str(datetime.datetime.now().month) + "_" + str(datetime.datetime.now().year) + "_tank.txt"
-        self.start()
+        self.paused = False
+        # self.start()
 
     def __write_out(self,temp,state):
         x = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
@@ -48,7 +47,6 @@ class LifeSupport(object):
         
     def get_comm_port(self):
         return self.__commPort
-    
 
     def get_status(self):
         return self.__status
@@ -86,31 +84,30 @@ class LifeSupport(object):
     def open_com(self):
         try:
             self.ser.open()
-        except OSError as (errno, strerror):
-            print "Erorr: {0}".format(strerror)
-            print "Can't open serial port. Shutting down"
+        except OSError:
+            print("Can't open serial port. Shutting down")
             sys.exit() # Quit the program
-        except Exception as (errno, strerror):
-            print "Erorr: {0}".format(strerror)
+        except Exception:
+            print("Erorr")
 
     def is_open(self):
         return self.ser.isOpen()
 
     def read_comm(self):
         cmd = '$026\r\n'  # Ask what switches are open
-        self.ser.write(cmd)
+        self.ser.write(bytes(cmd.encode('ascii')))
         out = ''
         # let's wait one second before reading output (let's give device time to answer)
         time.sleep(2)
         while self.ser.inWaiting() > 0:
-            out += self.ser.read(1)
+            out += self.ser.read(1).decode('ascii')
         if out != '':
             out = out.split()
             self.__status = out[-1]
         else:
             self.__status = 'ERROR, no reading'
 
-    def get_case(self):
+    def get_case(self,pause):
         '''
         Parse and interpret the current water level status
         Need to compare it to previous level and figure out next move
@@ -130,7 +127,7 @@ class LifeSupport(object):
         :return:
         '''
         self.read_comm()
-        print self.get_status()
+        print(self.get_status())
         if self.__status == 'Error, no reading':
             # Try to get reading 4 more times
             for i in range(4):
@@ -139,47 +136,52 @@ class LifeSupport(object):
                     break
                 else:
                     time.sleep(2)
-            print "Fatal Error, can't read switches"
+            print("Fatal Error, can't read switches")
             sys.exit()  # Quit the program
 
         # This is the main logic
         # When the pump is on, a second digital out
         try:
             state = int(self.__status[4])  # Float state
-        except Exception, e:
+        except Exception as e:
             time.sleep(1)
             return 0
-        self.update_relays()
+        # self.update_relays()
 
         # Cases:
         # !000000 - No floats on
         # !000400 - Bottom float on
         # !000600 - Bottom and middle float on
         # !000700 - Top Float on
-        if (state == 0) and (state != self.last_state):
-            # Case 0: Empty 
-            print "Empty"
-            self.toggle_pump(False)
-            self.toggle_circ_valve(True)
-        elif (state == 4) and (state != self.last_state):
-            # Case 1 : bottom switch only
-            print "Bottom float on"
-            self.toggle_pump(True)
-            self.toggle_circ_valve(True)
-        elif (state == 6) and (state != self.last_state):
-            #Case 2: Middle switch
-            print "Middle float on"
-            self.toggle_pump(True)
-            self.toggle_circ_valve(False)
-        elif (state == 7) and (state != self.last_state):
-            #Case 3: Top Switch
-            print "Top Float on"
-            self.toggle_pump(True)
-            self.toggle_circ_valve(on=False)
+        if ~pause:
+            if (state == 0) and (state != self.last_state):
+                # Case 0: Empty
+                print("Empty")
+                self.toggle_pump(False)
+                self.toggle_circ_valve(True)
+            elif (state == 4) and (state != self.last_state):
+                # Case 1 : bottom switch only
+                print("Bottom float on")
+                self.toggle_pump(True)
+                self.toggle_circ_valve(True)
+            elif (state == 6) and (state != self.last_state):
+                #Case 2: Middle switch
+                print("Middle float on")
+                self.toggle_pump(True)
+                self.toggle_circ_valve(False)
+            elif (state == 7) and (state != self.last_state):
+                #Case 3: Top Switch
+                print("Top Float on")
+                self.toggle_pump(True)
+                self.toggle_circ_valve(on=False)
         self.last_state = state
         return state
 
     def update_relays(self):
+        '''
+        Abandoned method
+        :return:
+        '''
         state = self.get_status()
         state = int(state[1])
         if state == 0:
@@ -198,6 +200,10 @@ class LifeSupport(object):
             self.__pump_on = True
             time.sleep(1)
             self.__recirc_on = True
+        elif state == 7:
+            self.__pump_on = True
+            time.sleep(1)
+            self.__recirc_on = False
 
     def toggle_pump(self,on=True):
         '''
@@ -209,18 +215,20 @@ class LifeSupport(object):
         ##if self.pump_timer.is_running():
         if False:
             # To prevent cycling the pump on and off, set a tolerance
-            print "Pump timer on: ", self.pump_timer.get_time_left()
+            print("Pump timer on: ", self.pump_timer.get_time_left())
             pass
         else:
             # Figure out how to check if the pump relay is open or not. This should be a read from the DO
             if on:
                 print('Turning pump on')
-                self.ser.write('#021501\r\n')
-                #self.pump_timer.set_timer(10)
+                cmd = '#021501\r\n'
+                self.ser.write(bytes(cmd.encode('ascii')))
+                self.__pump_on = True
             else:
                 print('Turning pump off')
-                self.ser.write('#021500\r\n')
-                #self.pump_timer.set_timer(10)
+                cmd = '#021500\r\n'
+                self.ser.write(bytes(cmd.encode('ascii')))
+                self.__pump_on = False
         time.sleep(2)
 
     def toggle_circ_valve(self,on):
@@ -232,78 +240,55 @@ class LifeSupport(object):
         # Figure out how to check if the pump relay is open or not. This should be a read from the DO
         if on:
             print('Turning recirc Valve On')
-            self.ser.write('#021601\r\n')
-            #self.circulation_timer.set_timer(10)
+            cmd = '#021601\r\n'
+            self.ser.write(bytes(cmd.encode('ascii')))
+            self.__recirc_on = True
         else:
             print('Turning recirc valve Off')
-            self.ser.write('#021600\r\n')
-            #self.circulation_timer.set_timer(10)
+            cmd = '#021600\r\n'
+            self.ser.write(bytes(cmd.encode('ascii')))
+            self.__recirc_on = False
+            
+    def start_up(self):
+        self.open_com()
+        time.sleep(.5)
+        self.toggle_pump(False)
+        time.sleep(1)
+        self.toggle_circ_valve(False)
+        time.sleep(1)
+        self.state = self.get_case(False)
 
     def start(self):
         self.open_com()
 
-        tmp = Tmp_Probe()
-        wr = WebReport()
+        # tmp = Tmp_Probe()
+        # wr = WebReport()
         self.toggle_pump(False)
         time.sleep(1)
         self.toggle_circ_valve(False)
         while True:
-            try:
-                out_temp = tmp.get_temp()
-            except Exception, e:
-                print "Trouble getting temp to "
-                out_temp = 666 # This should signify that something is wrong
-                pass
-            out_state = self.get_case()
-            try:
-                self.__write_out(out_temp,out_state)
-            except Exception, e:s
-            print e
-            print "Trouble writing to ", self.__filename()
             pass
-        try:
-            wr.stream(state=out_state,temp=out_temp)
-        except Exception, e:
-            print e
-            print "Error reporting Status"
-            pass
-        time.sleep(15)
-
-class Timer(object):
-    '''
-    Timer objects keep track of ellapsed time.
-
-    '''
-    def __init__(self):
-        self.__running = False
-        self.end_time = numpy.nan
-
-    def is_running(self):
-        if self.__is_time_up():
-            self.__running = False
-        else:
-            self.__running = True
-        return self.__running
-
-    def set_timer(self,length):
-        self.__running = True
-        self.end_time = time.time() + length
-
-    def __is_time_up(self):
-        if self.__running:
-            if time.time() - self.end_time > 0:
-                self.__running = False
-                return True
-            else:
-                return False
-        else:
-            return True
-
-    def get_time_left(self):
-        if self.__is_time_up():
-            return 0
-        else:
-            return int(time.time() - self.end_time * 1)
+            # if ~self.paused:
+                # try:
+                #     out_temp = tmp.get_temp()
+                # except Exception as e:
+                #     print("Trouble getting temp to ")
+                #     out_temp = 666 # This should signify that something is wrong
+                #     pass
+                # out_state = self.get_case()
+                # try:
+                #     self.__write_out(out_temp,out_state)
+                # except Exception as e:
+                #     print(e)
+                #     print("Trouble writing to ", self.__filename())
+                #     pass
+                # try:
+                #     wr.stream(state=out_state,temp=out_temp)
+                # except Exception as e:
+                #     print(e)
+                #     print("Error reporting Status")
+                #     pass
+                # time.sleep(15)
 
 class WebReport(object):
     '''
@@ -407,5 +392,9 @@ class Tmp_Probe(object):
     def get_temp(self):
         return self.__read_temp()
 
-if __name__ == '__main__':
-    life = LifeSupport()
+##if __name__ == '__main__':
+###    life = LifeSupport()
+##    tmp = Tmp_Probe()
+##    for i in range(10):
+##        print tmp.get_temp()
+##        time.sleep(2)

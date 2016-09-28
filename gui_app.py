@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import sys
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (QWidget, QGridLayout,
@@ -11,10 +12,12 @@ import datetime as dt
 import numpy as np
 from PyQt5.QtGui import QPainter, QColor, QBrush, QPalette
 from numpy import arange, sin, pi
+import matplotlib
+matplotlib.use('Qt5Agg')
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.dates import DateFormatter, MinuteLocator,SecondLocator
-
+import lifesupport as ls
 
 
 class MyMplCanvas(FigureCanvas):
@@ -40,37 +43,40 @@ class MyDynamicMplCanvas(MyMplCanvas):
         MyMplCanvas.__init__(self, *args, **kwargs)
         self.temp_data = [0]
         self.temp_time = [dt.datetime.now()]
-        # timer = QtCore.QTimer(self)
-        # timer.timeout.connect(self.update_figure)
-        # timer.start(1000)
+        self.tmp_probe = ls.Tmp_Probe()    
 
     def update_figure(self):
         # Build a list of 4 random integers between 0 and 10 (both inclusive)
-        self.temp_data.append(random.randrange(10,20,1))
+        try:
+            self.temp_data.append(self.tmp_probe.get_temp())
+        except:
+            self.temp_data.append(0)
         self.temp_time.append(dt.datetime.now())
         if len(self.temp_time) > 30:
             self.temp_data =  self.temp_data[1:-1]
             self.temp_time = self.temp_time[1:-1]
 
         self.axes.plot(self.temp_time, self.temp_data, 'r')
-        self.axes.set_ylim(0,20)
+        self.axes.set_ylim(0,30)
         self.axes.xaxis.set_minor_locator(SecondLocator())
         self.axes.xaxis.set_major_locator(MinuteLocator())
         self.axes.xaxis.set_major_formatter(DateFormatter('%H:%M:%S'))
         self.draw()
 
-class verticalWaterLevel(QWidget):
 
-    def __init__(self):
+class verticalWaterLevel(QWidget):
+    def __init__(self,lifeSupport):
         super(verticalWaterLevel,self).__init__()
+        self.lifeSupport = lifeSupport
         self.initUI()
 
     def initUI(self):
+
         self.setMinimumSize(60, 190)
         lbl = QLabel('Water\n Level',self)
         lbl.move(0,0)
 
-    def paintEvent(self, event):
+    def paintEvent(self,event):
         qp = QPainter()
         qp.begin(self)
         self.drawRectangles(qp)
@@ -93,19 +99,31 @@ class verticalWaterLevel(QWidget):
         qp.drawRect(0, h+40, w-1, self.getHeight(h))
 
         qp.setBrush(QColor(0,0,0))
-        for i in range(0,2):
-            y = h *(.33 * i) + 40
+        for i in range(0,3):
+            y = h *(.25 * i) + 40
 
             qp.drawLine(0,y,w,y)
 
-    def getHeight(self,h):
-        i = random.randint(0,2)
-        a = [0,1,2]
-        val = a[i]
-        if val == 0:
-            return 0
+    def getHeight(self,h,debug=False):
+
+        if debug:
+            i = random.randint(0,2)
+            a = [0,1,2]
+            val = a[i]
+            if val == 0:
+                return 0
+            else:
+                return (h *(-.25 * val))
         else:
-            return (h *(-.33 * val))
+            state = self.lifeSupport.last_state
+            if state == 0:
+                return (h * (-.25 * 1))
+            elif state == 4:
+                return (h * (-.25 * 2))
+            elif state == 6:
+                return (h * (-.25 * 3))
+            elif state == 7:
+                return (h * (-.25 * 4))
 
 class statusWidget(QWidget):
     def __init__(self):
@@ -136,30 +154,6 @@ class statusWidget(QWidget):
         self.square3.setStyleSheet("QWidget { background-color: %s }" %
                                    self.red.name())
 
-
-        # def paintEvent(self, event):
-    #     qp = QPainter()
-    #     qp.begin(self)
-    #     self.drawRectangles(qp)
-    #     qp.end()
-    #
-    # def drawRectangles(self,qp):
-    #     size = self.size()
-    #     w = size.width()
-    #     h = size.height()
-    #
-    #     col = QColor(255, 255, 255)
-    #     col.setNamedColor('#ffffff')
-    #     qp.setPen(col)
-    #     self.green = QColor(0,128,0)
-    #
-    #
-    #     qp.setBrush(QColor(255, 255, 255))
-    #     self.rect1 = qp.drawRect(10,20,60,60)
-    #     self.rect2 = qp.drawRect(10,105,60,60)
-    #     self.rect3 = qp.drawRect(10,190,60,60)
-
-
 class Example(QWidget):
 
     def __init__(self):
@@ -168,6 +162,7 @@ class Example(QWidget):
         self.height = 600
         self.updateTemp = True
         self.initUI()
+
 
     def initUI(self):
 
@@ -185,8 +180,12 @@ class Example(QWidget):
         self.lcd.display(strftime("%H" + ":" + "%M" + ":" + "%S"))
         self.lcd.setStyleSheet("QLCDNumber { background-color: %s }" %QColor("#1C5061").name())
 
+        # Lifesupport Object
+        self.lifeSupport = ls.LifeSupport()
+        self.lifeSupport.start_up()
+
         #Water level Widget
-        self.wLevel = verticalWaterLevel()
+        self.wLevel = verticalWaterLevel(self.lifeSupport)
         self.wLevel.resize(250, 150)
         self.wLevel.move(10,10)
 
@@ -217,23 +216,46 @@ class Example(QWidget):
         self.setWindowTitle('Life Support')
         self.show()
 
+
         # Main timer
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self.Time)
         self.timer.timeout.connect(self.sc.update_figure)
+
         self.timer.start(1000)
 
     def toggleUpdate(self):
         if self.updateTemp:
             self.updateTemp = False
+            self.startBtn.setText('Pause')
         else:
             self.updateTemp = True
+            self.startBtn.setText('Start')
 
     def Time(self):
         self.lcd.display(strftime("%H" + ":" + "%M" + ":" + "%S"))
-        if self.updateTemp:
-            self.update()
+        self.lifeSupport.get_case(False)
+        self.update()
+        self.checkStatus()
+        
+    def checkStatus(self):
+        # Update Recir Status Light
+        if self.lifeSupport.get_circ_status:
+            color = QColor(0,124,0)
+        else:
+            color = QColor(124,0,0)
+        self.status.square2.setStyleSheet("QWidget { background-color: %s }" % color.name())
+        # Update Pump Status light
+        if self.lifeSupport.get_pump_status:
+            color = QColor(0,124,0)
+        else:
+            color = QColor(124,0,0)
+        self.status.square1.setStyleSheet("QWidget { background-color: %s }" % color.name())
 
+
+
+
+        
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     ex = Example()
